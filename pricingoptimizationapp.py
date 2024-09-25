@@ -29,10 +29,19 @@ def load_lstm_model():
 # Helper function to create sequences for LSTM input
 def create_sequences(data, seq_length):
     xs = []
+    ys = []
     for i in range(len(data) - seq_length):
-        x = data[i:i+seq_length, :-1]  # All features except target (total wind production)
+        x = data[i:i+seq_length, :-1]  # All features except the target (last column)
+        y = data[i+seq_length, -1]  # The target is the last column (wind energy production)
         xs.append(x)
-    return np.array(xs)
+        ys.append(y)
+    return np.array(xs), np.array(ys)
+
+# Preprocess the data and ensure it's correctly shaped for LSTM
+X_lstm, y_lstm = create_sequences(scaled_data, sequence_length)
+
+# The shape of X_lstm should be (num_samples, sequence_length, num_features)
+print(X_lstm.shape)  # Ensure this prints something like (n_samples, sequence_length, n_features)
 
 # App Title
 st.title("Wind Energy Production Prediction")
