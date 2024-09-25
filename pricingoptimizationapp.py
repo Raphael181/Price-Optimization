@@ -23,7 +23,7 @@ def load_sample_data():
 # Load your trained LSTM model (you can save it from Colab and then load it in the Streamlit app)
 @st.cache(allow_output_mutation=True)
 def load_lstm_model():
-    model = load_model('your_lstm_model.h5')  # Provide the path to your saved LSTM model
+    model = load_model('lstm_model.keras')  # Provide the path to your saved LSTM model
     return model
 
 # Helper function to create sequences for LSTM input
