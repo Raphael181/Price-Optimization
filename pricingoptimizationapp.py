@@ -6,6 +6,20 @@ import plotly.express as px
 from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.models import load_model
 
+# Load a predefined dataset (you can replace this with your dataset)
+@st.cache
+def load_sample_data():
+    # Generating synthetic data for demonstration purposes
+    # This could be replaced by your actual dataset or a small sample of it
+    date_range = pd.date_range(start='2020-01-01', periods=1000, freq='H')
+    data = pd.DataFrame({
+        'timestamp': date_range,
+        'total_wind_production': np.sin(np.linspace(0, 100, 1000)) + np.random.normal(0, 0.1, 1000),
+        'temperature': np.random.uniform(0, 30, 1000),
+        'wind_speed': np.random.uniform(0, 15, 1000),
+    })
+    return data
+
 # Load your trained LSTM model (you can save it from Colab and then load it in the Streamlit app)
 @st.cache(allow_output_mutation=True)
 def load_lstm_model():
@@ -27,61 +41,51 @@ st.title("Wind Energy Production Prediction")
 st.sidebar.title("Model Settings")
 sequence_length = st.sidebar.slider("Sequence Length", min_value=10, max_value=100, value=60, step=5)
 
-# File upload for dataset
-uploaded_file = st.sidebar.file_uploader("Upload your CSV dataset", type=["csv"])
-if uploaded_file is not None:
-    # Load the dataset
-    data = pd.read_csv(uploaded_file)
-    
-    # Display a message when the file is uploaded
-    st.sidebar.success("File uploaded successfully!")
-    
-    # Show the data in the app
-    st.write("Dataset Preview")
-    st.dataframe(data.head())
+# Load the predefined dataset
+data = load_sample_data()
 
-    # Preprocessing: scaling
-    scaler = MinMaxScaler()
-    scaled_data = scaler.fit_transform(data)
+# Show the data in the app
+st.write("Dataset Preview")
+st.dataframe(data.head())
 
-    # Create sequences
-    X_lstm = create_sequences(scaled_data, sequence_length)
-    
-    # Load the LSTM model
-    lstm_model = load_lstm_model()
+# Preprocessing: scaling
+scaler = MinMaxScaler()
+scaled_data = scaler.fit_transform(data[['total_wind_production', 'temperature', 'wind_speed']])
 
-    # Predict on the uploaded data
-    predictions = lstm_model.predict(X_lstm)
-    
-    # Inverse transform the predictions
-    predictions_rescaled = scaler.inverse_transform(
-        np.concatenate([X_lstm[:, -1], predictions.reshape(-1, 1)], axis=1))[:, -1]
+# Create sequences
+X_lstm = create_sequences(scaled_data, sequence_length)
 
-    # Visualize predictions vs actual values
-    st.subheader("Wind Energy Production Predictions")
-    df_results = pd.DataFrame({
-        'Actual': data['total_wind_production'][sequence_length:],
-        'Predicted': predictions_rescaled
-    })
-    
-    # Plot results
-    fig = px.line(df_results, title="Actual vs Predicted Wind Energy Production")
-    st.plotly_chart(fig)
+# Load the LSTM model
+lstm_model = load_lstm_model()
 
-    # Display prediction metrics (MSE, R²)
-    st.subheader("Model Performance")
-    mse = np.mean((df_results['Actual'] - df_results['Predicted'])**2)
-    r2 = 1 - (np.sum((df_results['Actual'] - df_results['Predicted'])**2) / np.sum((df_results['Actual'] - np.mean(df_results['Actual']))**2))
-    st.write(f"**Mean Squared Error (MSE):** {mse:.4f}")
-    st.write(f"**R-squared (R²):** {r2:.4f}")
+# Predict on the preloaded data
+predictions = lstm_model.predict(X_lstm)
 
-else:
-    st.sidebar.warning("Please upload a CSV file to proceed.")
+# Inverse transform the predictions
+predictions_rescaled = scaler.inverse_transform(
+    np.concatenate([X_lstm[:, -1], predictions.reshape(-1, 1)], axis=1))[:, -1]
+
+# Visualize predictions vs actual values
+st.subheader("Wind Energy Production Predictions")
+df_results = pd.DataFrame({
+    'Actual': data['total_wind_production'][sequence_length:].values,
+    'Predicted': predictions_rescaled
+})
+
+# Plot results
+fig = px.line(df_results, title="Actual vs Predicted Wind Energy Production")
+st.plotly_chart(fig)
+
+# Display prediction metrics (MSE, R²)
+st.subheader("Model Performance")
+mse = np.mean((df_results['Actual'] - df_results['Predicted'])**2)
+r2 = 1 - (np.sum((df_results['Actual'] - df_results['Predicted'])**2) / np.sum((df_results['Actual'] - np.mean(df_results['Actual']))**2))
+st.write(f"**Mean Squared Error (MSE):** {mse:.4f}")
+st.write(f"**R-squared (R²):** {r2:.4f}")
 
 # Footer with instructions
 st.sidebar.subheader("Instructions")
 st.sidebar.write("""
-- Upload a CSV file with wind production data.
 - Adjust the model settings using the sidebar.
 - View predictions and performance metrics in the main area.
 """)
