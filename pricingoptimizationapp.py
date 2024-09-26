@@ -10,7 +10,6 @@ from tensorflow.keras.layers import LSTM, Dense
 # Load a predefined dataset (synthetic for demonstration purposes)
 @st.cache
 def load_sample_data():
-    # Generating synthetic data for demonstration purposes
     date_range = pd.date_range(start='2020-01-01', periods=1000, freq='H')
     data = pd.DataFrame({
         'timestamp': date_range,
@@ -31,59 +30,79 @@ def create_sequences(data, seq_length):
         ys.append(y)
     return np.array(xs), np.array(ys)
 
-# Load and preprocess the dataset
-data = load_sample_data()
+# Streamlit App Layout
 
-# Show the data in the app
+st.title("Wind Energy Production Forecasting")
+st.markdown("### An interactive app to predict wind energy production using an LSTM model.")
+
+# Step 1: User Inputs for Model Parameters
+st.sidebar.header("Model Settings")
+seq_length = st.sidebar.slider('Sequence Length for LSTM Input', min_value=10, max_value=100, value=60, step=10)
+lstm_units = st.sidebar.slider('Number of LSTM Units', min_value=10, max_value=200, value=50, step=10)
+epochs = st.sidebar.slider('Number of Epochs', min_value=1, max_value=50, value=10, step=1)
+
+# Step 2: Feature Selection
+st.sidebar.header("Select Features")
+feature_columns = ['total_wind_production', 'temperature', 'wind_speed']
+selected_features = st.sidebar.multiselect("Select Features to Include", options=feature_columns, default=feature_columns)
+
+# Step 3: Load and Preprocess the Dataset
+data = load_sample_data()
 st.write("Dataset Preview")
 st.dataframe(data.head())
 
-# Feature Scaling (Min-Max Scaling)
-scaler = MinMaxScaler()
+# Ensure the selected features are valid for scaling
+if len(selected_features) > 0:
+    scaler = MinMaxScaler()
+    scaled_data = scaler.fit_transform(data[selected_features])
+    
+    # Step 4: Create sequences for LSTM input
+    X_lstm, y_lstm = create_sequences(scaled_data, seq_length)
 
-# Select the columns to be scaled
-scaled_data = scaler.fit_transform(data[['total_wind_production', 'temperature', 'wind_speed']])
+    # Step 5: Define and Train the LSTM Model
+    model = Sequential()
+    model.add(LSTM(units=lstm_units, return_sequences=False, input_shape=(seq_length, X_lstm.shape[2])))
+    model.add(Dense(1))  # Output layer with 1 neuron for the target variable
+    model.compile(optimizer='adam', loss='mean_squared_error')
 
-# Create sequences from the scaled data
-sequence_length = 60  # Choose a sequence length for LSTM
-X_lstm, y_lstm = create_sequences(scaled_data, sequence_length)
+    # Train the model
+    st.write(f"Training the model with {epochs} epochs...")
+    model.fit(X_lstm, y_lstm, epochs=epochs, batch_size=32, validation_split=0.2, verbose=2)
 
-# The shape of X_lstm should be (num_samples, sequence_length, num_features)
-st.write(f"Shape of input data (X): {X_lstm.shape}")
-st.write(f"Shape of target data (y): {y_lstm.shape}")
+    # Step 6: Make Predictions
+    predictions = model.predict(X_lstm)
 
-# Define LSTM model
-model = Sequential()
-model.add(LSTM(units=50, return_sequences=False, input_shape=(sequence_length, X_lstm.shape[2])))
-model.add(Dense(1))  # Output layer with 1 neuron for the target variable
+    # Inverse transform the predictions if necessary
+    if 'total_wind_production' in selected_features:
+        last_index = selected_features.index('total_wind_production')
+        predictions_rescaled = scaler.inverse_transform(
+            np.concatenate([X_lstm[:, -1], predictions.reshape(-1, 1)], axis=1))[:, -1]
+    else:
+        predictions_rescaled = predictions.flatten()  # No need to inverse transform if 'total_wind_production' not in features
 
-# Compile the model
-model.compile(optimizer='adam', loss='mean_squared_error')
+    # Step 7: Visualizations
+    st.subheader("Wind Energy Production Predictions")
+    df_results = pd.DataFrame({
+        'Actual': data['total_wind_production'][seq_length:].values,
+        'Predicted': predictions_rescaled
+    })
 
-# Train the model
-model.fit(X_lstm, y_lstm, epochs=10, batch_size=32, validation_split=0.2)
+    # Interactive Plot
+    fig = px.line(df_results, title="Actual vs Predicted Wind Energy Production", markers=True)
+    fig.update_layout(hovermode="x")
+    st.plotly_chart(fig)
 
-# Predict on the preloaded data
-predictions = model.predict(X_lstm)
+    # Step 8: Display Metrics
+    st.subheader("Model Performance")
+    mse = np.mean((df_results['Actual'] - df_results['Predicted'])**2)
+    r2 = 1 - (np.sum((df_results['Actual'] - df_results['Predicted'])**2) / np.sum((df_results['Actual'] - np.mean(df_results['Actual']))**2))
+    st.write(f"**Mean Squared Error (MSE):** {mse:.4f}")
+    st.write(f"**R-squared (R²):** {r2:.4f}")
 
-# Inverse transform the predictions
-predictions_rescaled = scaler.inverse_transform(
-    np.concatenate([X_lstm[:, -1], predictions.reshape(-1, 1)], axis=1))[:, -1]
+    # Step 9: Download Predictions
+    st.subheader("Download Predictions")
+    csv = df_results.to_csv(index=False)
+    st.download_button(label="Download CSV", data=csv, file_name='predictions.csv', mime='text/csv')
 
-# Visualize predictions vs actual values
-st.subheader("Wind Energy Production Predictions")
-df_results = pd.DataFrame({
-    'Actual': data['total_wind_production'][sequence_length:].values,
-    'Predicted': predictions_rescaled
-})
-
-# Plot results
-fig = px.line(df_results, title="Actual vs Predicted Wind Energy Production")
-st.plotly_chart(fig)
-
-# Display prediction metrics (MSE, R²)
-st.subheader("Model Performance")
-mse = np.mean((df_results['Actual'] - df_results['Predicted'])**2)
-r2 = 1 - (np.sum((df_results['Actual'] - df_results['Predicted'])**2) / np.sum((df_results['Actual'] - np.mean(df_results['Actual']))**2))
-st.write(f"**Mean Squared Error (MSE):** {mse:.4f}")
-st.write(f"**R-squared (R²):** {r2:.4f}")
+else:
+    st.write("Please select at least one feature for scaling and prediction.")
